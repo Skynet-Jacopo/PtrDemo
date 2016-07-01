@@ -11,6 +11,9 @@ import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.mugen.Mugen;
+import com.mugen.MugenCallbacks;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -22,7 +25,8 @@ import in.srain.cube.views.ptr.PtrClassicFrameLayout;
 import in.srain.cube.views.ptr.PtrDefaultHandler;
 import in.srain.cube.views.ptr.PtrFrameLayout;
 
-public class RepoListFragment extends Fragment implements PtrView<List<String>> {
+public class RepoListFragment extends Fragment implements
+        PtrView<List<String>>,LoadMoreView<List<String>> {
 
     @Bind(R.id.ptrClassicFrameLayout) PtrClassicFrameLayout ptrFrameLayout;
     @Bind(R.id.lvRepos) ListView listView;
@@ -30,7 +34,8 @@ public class RepoListFragment extends Fragment implements PtrView<List<String>> 
     @Bind(R.id.errorView) TextView errorView;
 
     private ArrayAdapter<String> adapter;
-    private ArrayList<String> datas = new ArrayList<String>();
+
+    private FooterView footerView; // 上拉加载更多的视图
 
     @Nullable @Override public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
         return inflater.inflate(R.layout.fragment_repo_list, container, false);
@@ -48,6 +53,26 @@ public class RepoListFragment extends Fragment implements PtrView<List<String>> 
                 loadData();
             }
         });
+
+        footerView = new FooterView(getContext());
+        // 上拉加载更多(listview滑动动最后的位置了，就可以loadmore)
+        Mugen.with(listView, new MugenCallbacks() {
+            @Override
+            public void onLoadMore() {
+                Toast.makeText(getContext(), "loadmore", Toast.LENGTH_SHORT).show();
+                loadMore();
+            }
+
+            // 是否正在加载，此方法用来避免重复加载
+            @Override public boolean isLoading() {
+                return listView.getFooterViewsCount() > 0 && footerView.isLoading();
+            }
+
+            // 是否所有数据都已加载
+            @Override public boolean hasLoadedAllItems() {
+                return listView.getFooterViewsCount() > 0 && footerView.isComplete();
+            }
+        }).start();
     }
 
     @Override public void onDestroyView() {
@@ -58,7 +83,7 @@ public class RepoListFragment extends Fragment implements PtrView<List<String>> 
     // 这是视图层的业务逻辑-----------------------------------------------------------
     @OnClick({R.id.emptyView, R.id.errorView})
     public void loadData() {
-        final int size = new Random().nextInt(5);
+        final int size = new Random().nextInt(40);
         new Thread(new Runnable() {
             @Override public void run() {
                 try {
@@ -67,16 +92,16 @@ public class RepoListFragment extends Fragment implements PtrView<List<String>> 
                     // showMessage(e.getMessage());
                     return;
                 }
-                datas.clear();
+                final ArrayList<String> loadDatas = new ArrayList<String>();
                 for (int i = 0; i < size; i++) {
-                    datas.add("我是第" + (++count) + "条数据");
+                    loadDatas.add("我是第" + (++count) + "条数据");
                 }
-                asyncLoadData(size);
+                asyncLoadData(size,loadDatas);
             }
         }).start();
     }
 
-    private void asyncLoadData(final int size) {
+    private void asyncLoadData(final int size,final ArrayList<String> datas) {
         ptrFrameLayout.post(new Runnable() {
             @Override public void run() {
                 // 模似空数据时的(视图)情况
@@ -132,5 +157,61 @@ public class RepoListFragment extends Fragment implements PtrView<List<String>> 
 
     @Override public void stopRefresh() {
         ptrFrameLayout.refreshComplete(); // 下拉刷新完成
+    }
+
+    // 这是上拉加载更多视图层的业务逻辑------------------------------------------------
+    private void loadMore() {
+        // 显示加载中...
+        showLoadMoreLoading();
+        new Thread(new Runnable() {
+            @Override public void run() {
+                try {
+                    Thread.sleep(2000);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                final ArrayList<String> loadDatas = new ArrayList<String>();
+                for (int i = 0; i < 10; i++) {
+                    loadDatas.add("我是loadMore的第" + i + "条数据");
+                }
+                ptrFrameLayout.post(new Runnable() {
+                    @Override public void run() {
+                        // 将加载到的数据添加到视图上
+                        addMoreData(loadDatas);
+                        // 隐藏加载中....
+                        hideLoadMore();
+                    }
+                });
+            }
+        }).start();
+    }
+    // 这是上拉加载更多视图层实现------------------------------------------------------
+    @Override public void addMoreData(List<String> datas) {
+        adapter.addAll(datas);
+    }
+
+    @Override public void hideLoadMore() {
+        listView.removeFooterView(footerView);
+    }
+
+    @Override public void showLoadMoreLoading() {
+        if (listView.getFooterViewsCount() == 0) {
+            listView.addFooterView(footerView);
+        }
+        footerView.showLoading();
+    }
+
+    @Override public void showLoadMoreErro(String msg) {
+        if (listView.getFooterViewsCount() == 0) {
+            listView.addFooterView(footerView);
+        }
+        footerView.showError(msg);
+    }
+
+    @Override public void showLoadMoreEnd() {
+        if (listView.getFooterViewsCount() == 0) {
+            listView.addFooterView(footerView);
+        }
+        footerView.showComplete();
     }
 }
